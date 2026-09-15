@@ -1,8 +1,7 @@
 import React, { useContext, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView } from 'react-native';
-import { AppContext, Theme } from '../context/AppContext';
+import { AppContext, Theme, api } from '../context/AppContext';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import axios from 'axios';
 
 const getCatMeta = (C: Theme): { [key: string]: { color: string; hi: string } } => ({
   Groceries: { color: C.secondary, hi: 'किराना' },
@@ -41,12 +40,15 @@ export default function AnalyticsScreen() {
     if (!searchItem.trim()) return;
     try {
       setIsSearching(true);
-      const res = await axios.get(`/api/analytics/price-history?item=${encodeURIComponent(searchItem.trim())}`);
+      // Use the authenticated `api` instance (has Bearer token + correct base URL)
+      // Backend expects query param `itemName`, not `item`
+      const res = await api.get(`/api/analytics/price-history?itemName=${encodeURIComponent(searchItem.trim())}`);
       if (res.data.success) {
         setPriceHistory(res.data.history || []);
       }
     } catch (e) {
       console.log('Price history search error:', e);
+      setPriceHistory([]);
     } finally {
       setIsSearching(false);
     }
