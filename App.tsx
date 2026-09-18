@@ -1,10 +1,11 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, SafeAreaView, View, ActivityIndicator } from 'react-native';
 import { AppProvider, AppContext } from './src/context/AppContext';
 import LoginScreen from './src/screens/LoginScreen';
 import SignUpScreen from './src/screens/SignUpScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
+import WelcomeScreen from './src/screens/WelcomeScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import ExpensesScreen from './src/screens/ExpensesScreen';
 import CalculatorScreen from './src/screens/CalculatorScreen';
@@ -18,8 +19,22 @@ import { createStackNavigator } from '@react-navigation/stack';
 const AuthStack = createStackNavigator();
 const AppStack = createStackNavigator();
 
+// Helper to read localStorage (cross-platform safe)
+const getWelcomeSeen = (): boolean => {
+  try {
+    return typeof localStorage !== 'undefined'
+      ? localStorage.getItem('hb_welcome_seen') === 'true'
+      : true; // On native (non-web) skip welcome screen
+  } catch {
+    return true;
+  }
+};
+
 function MainApp() {
   const context = useContext(AppContext);
+
+  // Track whether the user has seen the welcome screen
+  const [welcomeSeen, setWelcomeSeen] = useState<boolean>(() => getWelcomeSeen());
 
   if (!context) {
     return null;
@@ -51,6 +66,20 @@ function MainApp() {
     },
     fonts: DefaultTheme.fonts,
   };
+
+  // Show WelcomeScreen only when NOT logged in AND welcome not yet seen
+  if (!welcomeSeen && token === null) {
+    return (
+      <View style={styles.globalDesktopBackground}>
+        <View style={[styles.globalMobileShell, { backgroundColor: C.surface }]}>
+          <SafeAreaView style={styles.safeArea}>
+            <StatusBar style={isDarkMode ? 'light' : 'dark'} />
+            <WelcomeScreen onDone={() => setWelcomeSeen(true)} />
+          </SafeAreaView>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.globalDesktopBackground}>

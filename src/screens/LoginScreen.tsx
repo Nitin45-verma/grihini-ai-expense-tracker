@@ -5,6 +5,15 @@ import {
 } from 'react-native';
 import { AppContext, Theme } from '../context/AppContext';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as AuthSession from 'expo-auth-session';
+import * as Crypto from 'expo-crypto';
+
+// Google OAuth config for native (Android/iOS)
+const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
+const discovery = {
+  authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+  tokenEndpoint: 'https://oauth2.googleapis.com/token',
+};
 
 interface LoginScreenProps {
   setAuthScreen?: (screen: 'login' | 'signup') => void;
@@ -17,6 +26,61 @@ export default function LoginScreen({ setAuthScreen, navigation }: LoginScreenPr
 
   const { login, sendEmailOtp, verifyEmailOtp, loginWithGoogle, t, C } = context;
   const isDark = C.surface !== '#fbf9fa';
+
+  // ── Native Google OAuth (expo-auth-session) ───────────────────────
+  const redirectUri = AuthSession.makeRedirectUri({ useProxy: true });
+  const [nativeGoogleRequest, nativeGoogleResponse, promptNativeGoogleAsync] =
+    AuthSession.useAuthRequest(
+      {
+        clientId: GOOGLE_CLIENT_ID,
+        scopes: ['openid', 'email', 'profile'],
+        redirectUri,
+        responseType: AuthSession.ResponseType.Token,
+        extraParams: { nonce: Crypto.randomUUID() },
+      },
+      discovery
+    );
+
+  // Handle native Google OAuth response
+  useEffect(() => {
+    if (nativeGoogleResponse?.type === 'success') {
+      const { access_token } = nativeGoogleResponse.params;
+      if (access_token) {
+        handleNativeGoogleToken(access_token);
+      }
+    } else if (nativeGoogleResponse?.type === 'error') {
+      setOtpMsg({ text: nativeGoogleResponse.error?.message || 'Google Sign-In failed', isError: true });
+    }
+  }, [nativeGoogleResponse]);
+
+  const handleNativeGoogleToken = async (accessToken: string) => {
+    try {
+      setIsLoading(true);
+      // Fetch user info from Google using access_token
+      const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const userInfo = await userInfoRes.json();
+
+      if (!userInfo.email) {
+        setOtpMsg({ text: 'Could not retrieve email from Google.', isError: true });
+        setIsLoading(false);
+        return;
+      }
+
+      // Send to backend — backend accepts { idToken } or { credential }
+      // For access_token flow, pass as credential so backend can handle it gracefully.
+      // NOTE: For full id_token support on native, switch to ResponseType.Code + PKCE.
+      const res = await loginWithGoogle(accessToken);
+      if (!res.success) {
+        setOtpMsg({ text: res.message || 'Google Sign-In failed', isError: true });
+      }
+    } catch (e: any) {
+      setOtpMsg({ text: e.message || 'Google Sign-In error', isError: true });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -341,7 +405,11 @@ export default function LoginScreen({ setAuthScreen, navigation }: LoginScreenPr
                 />
               </View>
             ) : (
-              <TouchableOpacity style={s.socialBtn} onPress={() => {}} disabled={isLoading}>
+              <TouchableOpacity
+                style={s.socialBtn}
+                onPress={() => promptNativeGoogleAsync()}
+                disabled={isLoading || !nativeGoogleRequest}
+              >
                 <MaterialCommunityIcons name="google" size={22} color={C.primary} />
                 <Text style={s.socialText}>{t('continue_google')}</Text>
               </TouchableOpacity>
